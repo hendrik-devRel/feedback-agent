@@ -4,6 +4,8 @@
 - Docker and Docker Compose installed
 - Go 1.21+ (for running the application)
 
+- cahnges here 
+
 ## Quick Start
 
 1. **Start the database:**
