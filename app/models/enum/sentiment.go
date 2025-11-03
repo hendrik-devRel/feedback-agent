@@ -1,6 +1,9 @@
 package enum
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type Sentiment int
 
@@ -53,6 +56,27 @@ func (s Sentiment) Category() string {
 	default:
 		return "Context"
 	}
+}
+
+// UnmarshalJSON allows Sentiment to be unmarshaled from JSON numbers
+func (s *Sentiment) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as number first
+	var num int
+	if err := json.Unmarshal(data, &num); err == nil {
+		*s = Sentiment(num)
+		// Validate it's a valid enum value
+		if _, ok := sentimentIDs[*s]; !ok {
+			return fmt.Errorf("unknown Sentiment: %d", num)
+		}
+		return nil
+	}
+	// Fallback to text unmarshaling
+	return s.UnmarshalText(data)
+}
+
+// MarshalJSON allows Sentiment to be marshaled as JSON numbers
+func (s Sentiment) MarshalJSON() ([]byte, error) {
+	return json.Marshal(int(s))
 }
 
 

@@ -1,6 +1,9 @@
 package enum
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type FeedbackType int
 
@@ -42,6 +45,27 @@ func (s FeedbackType) Name() string {
 		return id
 	}
 	return "unknown"
+}
+
+// UnmarshalJSON allows FeedbackType to be unmarshaled from JSON numbers
+func (s *FeedbackType) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as number first
+	var num int
+	if err := json.Unmarshal(data, &num); err == nil {
+		*s = FeedbackType(num)
+		// Validate it's a valid enum value
+		if _, ok := feedbackTypeIDs[*s]; !ok {
+			return fmt.Errorf("unknown FeedbackType: %d", num)
+		}
+		return nil
+	}
+	// Fallback to text unmarshaling
+	return s.UnmarshalText(data)
+}
+
+// MarshalJSON allows FeedbackType to be marshaled as JSON numbers
+func (s FeedbackType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(int(s))
 }
 
 
