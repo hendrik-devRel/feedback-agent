@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,17 +18,10 @@ import (
 
 func main() {
 	// Database connection
-import (
-	"os"
-)
-
-func main() {
-	// Database connection
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		connStr = "postgres://postgres:password@localhost:5432/feedback?sslmode=disable" // fallback for local dev
 	}
-	db, err := sql.Open("postgres", connStr)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
