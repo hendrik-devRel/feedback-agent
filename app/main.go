@@ -1,3 +1,18 @@
+// @title           Feedback Agent API
+// @version         1.0
+// @description     API for managing feedback with LLM-based auto-classification
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host      localhost:8080
+// @BasePath  /
+
 package main
 
 import (
@@ -7,26 +22,44 @@ import (
 	"net/http"
 	"os"
 	"time"
-
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 	"feedback-agent/app/models/entity"
 	"feedback-agent/app/models/enum"
 	"feedback-agent/app/models/request"
+	"feedback-agent/app/infrastructure/llm"
+	service "feedback-agent/app/models/services"
+	_ "feedback-agent/docs" // This will be created after running swag init
 )
 
 func main() {
+	
+	// Load environment variables
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Error loading .env file")
+	}
+
 	// Database connection
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
-		connStr = "postgres://postgres:password@localhost:5432/feedback?sslmode=disable" // fallback for local dev
+		log.Fatal("DATABASE_URL environment variable is required")
 	}
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
+
+	// Create LLM client
+	llmClient := llm.NewOpenAIClient(os.Getenv("OPENAI_API_KEY"))
+
+	// Create classification service
+	classificationService := service.NewClassificationService(llmClient)
 
 	// Test the connection with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -39,13 +72,31 @@ func main() {
 	// Setup Gin router
 	router := gin.Default()
 
-	// Health check endpoint
+	// Swagger documentation endpoint
+	router.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// @Summary Health check endpoint
+	// @Description Returns the health status of the API
+	// @Tags health
+	// @Accept json
+	// @Produce json
+	// @Success 200 {object} map[string]string
+	// @Router /health [get]
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// Create feedback endpoint
-	router.POST("/api/feedback", createFeedbackHandler(db))
+	// @Summary Create feedback
+	// @Description Create a new feedback entry with optional auto-classification
+	// @Tags feedback
+	// @Accept json
+	// @Produce json
+	// @Param feedback body request.CreateFeedbackRequest true "Feedback data"
+	// @Success 201 {object} entity.Feedback
+	// @Failure 400 {object} map[string]string
+	// @Failure 500 {object} map[string]string
+	// @Router /api/feedback [post]
+	router.POST("/api/feedback", createFeedbackHandler(db, classificationService))
 
 	// Start server
 	log.Println("Starting server on :8080")
@@ -54,7 +105,7 @@ func main() {
 	}
 }
 
-func createFeedbackHandler(db *sql.DB) gin.HandlerFunc {
+func createFeedbackHandler(db *sql.DB, classifier *service.ClassificationService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req request.CreateFeedbackRequest
 
@@ -62,6 +113,19 @@ func createFeedbackHandler(db *sql.DB) gin.HandlerFunc {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Auto-classify if Type not provided
+		var feedbackType enum.FeedbackType
+		if req.Type != nil {
+			feedbackType = *req.Type
+		} else {
+			// Use LLM classification service
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+			defer cancel()
+			feedbackType = classifier.ClassifyFeedback(ctx, req.Title, req.Description)
+			log.Printf("Auto-classified feedback as: %s", feedbackType.Name())
+		}
 		}
 
 		// Set default sentiment if not provided
@@ -83,7 +147,7 @@ func createFeedbackHandler(db *sql.DB) gin.HandlerFunc {
 			query,
 			req.Title,
 			req.Description,
-			int(req.Type),
+			int(feedbackType), // Use feedbackType instead of req.Type
 			pq.Array(req.Tags), // Convert []string to PostgreSQL array
 			int(sentiment),
 			req.SentimentScore,
@@ -99,7 +163,7 @@ func createFeedbackHandler(db *sql.DB) gin.HandlerFunc {
 		// Set the input fields
 		feedback.Title = req.Title
 		feedback.Description = req.Description
-		feedback.Type = req.Type
+		feedback.Type = feedbackType // Use feedbackType instead of req.Type
 		feedback.Tags = req.Tags
 		feedback.Sentiment = sentiment
 		feedback.SentimentScore = req.SentimentScore
