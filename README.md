@@ -140,3 +140,52 @@ docker-compose down -v
 docker-compose up -d
 # Re-run migrations
 ```
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/feedback` | Create a feedback item |
+| `GET` | `/api/feedback` | List feedback (filters + pagination) |
+| `GET` | `/api/feedback/:id` | Get a single feedback item |
+| `POST` | `/api/feedback/:id/votes` | Vote on a feedback item |
+
+### List feedback
+
+`GET /api/feedback` supports optional query parameters:
+
+- `type` — `bug`, `feature`, or `general`
+- `sentiment` — `neutral`, `positive`, or `negative`
+- `tag` — return items whose tags contain the value
+- `page` (default `1`) and `pageSize` (default `20`, max `100`)
+
+```bash
+curl "http://localhost:8080/api/feedback?type=bug&sentiment=negative&page=1&pageSize=10"
+```
+
+Response shape:
+
+```json
+{
+  "items": [ { "id": 1, "title": "...", "votes": 3 } ],
+  "total": 42,
+  "page": 1,
+  "pageSize": 10
+}
+```
+
+### Vote on feedback
+
+`POST /api/feedback/:id/votes` records a vote and returns the updated item.
+The body is optional — send a `userId` to deduplicate votes per user:
+
+```bash
+# Anonymous vote
+curl -X POST http://localhost:8080/api/feedback/1/votes
+
+# Authenticated vote (409 Conflict on a duplicate)
+curl -X POST http://localhost:8080/api/feedback/1/votes \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 7}'
+```
